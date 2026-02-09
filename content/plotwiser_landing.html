@@ -438,6 +438,9 @@
           </div>
 
           <form class="miniForm" aria-label="Early access request" onsubmit="event.preventDefault(); submitForm(this);">
+            <div style="position:absolute;left:-9999px;" aria-hidden="true">
+              <input type="text" name="website" id="website" tabindex="-1" autocomplete="off">
+            </div>
             <label for="company">Company</label>
             <input id="company" name="company" placeholder="ACME Trading" required="">
 
@@ -502,6 +505,7 @@
             email: form.email.value,
             role: form.role.value,
             coords: form.coords.value,
+            website: form.website.value,
           }),
         });
         if (res.ok) {

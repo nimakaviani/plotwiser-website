@@ -235,6 +235,11 @@ resource "aws_iam_role_policy" "lambda" {
       },
       {
         Effect   = "Allow"
+        Action   = ["ses:SendEmail"]
+        Resource = "*"
+      },
+      {
+        Effect   = "Allow"
         Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
         Resource = "arn:aws:logs:*:*:*"
       }
@@ -252,7 +257,7 @@ resource "aws_lambda_function" "form" {
   source_code_hash = data.archive_file.lambda.output_base64sha256
 
   environment {
-    variables = { BUCKET = aws_s3_bucket.data.id }
+    variables = { BUCKET = aws_s3_bucket.data.id, NOTIFY_EMAIL = "info@plotwiser.com" }
   }
 }
 
@@ -287,6 +292,11 @@ resource "aws_apigatewayv2_stage" "form" {
   api_id      = aws_apigatewayv2_api.form.id
   name        = "$default"
   auto_deploy = true
+
+  default_route_settings {
+    throttling_burst_limit = 10
+    throttling_rate_limit  = 5
+  }
 }
 
 resource "aws_lambda_permission" "apigw" {
