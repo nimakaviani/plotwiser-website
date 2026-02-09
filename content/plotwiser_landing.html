@@ -437,7 +437,7 @@
             <p class="sectionP" style="margin:0;">Drop your details — we'll set up a demo.</p>
           </div>
 
-          <form class="miniForm" aria-label="Early access request" onsubmit="event.preventDefault(); fakeSubmit();">
+          <form class="miniForm" aria-label="Early access request" onsubmit="event.preventDefault(); submitForm(this);">
             <label for="company">Company</label>
             <input id="company" name="company" placeholder="ACME Trading" required="">
 
@@ -458,8 +458,8 @@
             </div>
 
             <div class="formActions">
-              <button class="btn primary" type="submit">Request access</button>
-              <div class="hint">Demo form — not connected yet</div>
+              <button class="btn primary" type="submit" id="submitBtn">Request access</button>
+              <div class="hint" id="formHint"></div>
             </div>
           </form>
         </div>
@@ -486,9 +486,36 @@
       });
     });
     document.getElementById('year').textContent = new Date().getFullYear();
-    function fakeSubmit() {
-      const v = id => (document.getElementById(id).value || '').trim() || '—';
-      alert(`Demo (not sent)\n\nCompany: ${v('company')}\nEmail: ${v('email')}\nRole: ${v('role')}\n\nPlot:\n${v('coords')}`);
+
+    const API = '%%API_URL%%';
+    async function submitForm(form) {
+      const btn = document.getElementById('submitBtn');
+      const hint = document.getElementById('formHint');
+      btn.disabled = true; btn.textContent = 'Sending…';
+      hint.textContent = '';
+      try {
+        const res = await fetch(API + '/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            company: form.company.value,
+            email: form.email.value,
+            role: form.role.value,
+            coords: form.coords.value,
+          }),
+        });
+        if (res.ok) {
+          hint.textContent = '✓ Submitted — we'll be in touch!';
+          hint.style.color = '#34d399';
+          form.reset();
+        } else {
+          throw new Error(res.statusText);
+        }
+      } catch (e) {
+        hint.textContent = 'Something went wrong. Try again.';
+        hint.style.color = '#f87171';
+      }
+      btn.disabled = false; btn.textContent = 'Request access';
     }
   </script>
 

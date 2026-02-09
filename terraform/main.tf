@@ -180,7 +180,120 @@ resource "aws_route53_record" "www" {
   }
 }
 
+# --- Private data bucket (submissions) ---
+
+resource "aws_s3_bucket" "data" {
+  bucket = "${local.domain}-data"
+}
+
+resource "aws_s3_bucket_public_access_block" "data" {
+  bucket                  = aws_s3_bucket.data.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "data" {
+  bucket = aws_s3_bucket.data.id
+  rule {
+    apply_server_side_encryption_by_default { sse_algorithm = "AES256" }
+  }
+}
+
+# --- Lambda ---
+
+data "archive_file" "lambda" {
+  type        = "zip"
+  source_dir  = "${path.module}/lambda"
+  output_path = "${path.module}/lambda.zip"
+}
+
+resource "aws_iam_role" "lambda" {
+  name = "plotwiser-form-lambda"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Principal = { Service = "lambda.amazonaws.com" }, Action = "sts:AssumeRole" }]
+  })
+}
+
+resource "aws_iam_role_policy" "lambda" {
+  name = "s3-csv-access"
+  role = aws_iam_role.lambda.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject"]
+        Resource = "${aws_s3_bucket.data.arn}/submissions.csv"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+        Resource = "arn:aws:logs:*:*:*"
+      }
+    ]
+  })
+}
+
+resource "aws_lambda_function" "form" {
+  function_name    = "plotwiser-form"
+  role             = aws_iam_role.lambda.arn
+  handler          = "index.handler"
+  runtime          = "python3.12"
+  timeout          = 10
+  filename         = data.archive_file.lambda.output_path
+  source_code_hash = data.archive_file.lambda.output_base64sha256
+
+  environment {
+    variables = { BUCKET = aws_s3_bucket.data.id }
+  }
+}
+
+# --- API Gateway ---
+
+resource "aws_apigatewayv2_api" "form" {
+  name          = "plotwiser-form"
+  protocol_type = "HTTP"
+
+  cors_configuration {
+    allow_origins = ["https://${local.domain}", "https://www.${local.domain}"]
+    allow_methods = ["POST", "OPTIONS"]
+    allow_headers = ["Content-Type"]
+    max_age       = 86400
+  }
+}
+
+resource "aws_apigatewayv2_integration" "form" {
+  api_id                 = aws_apigatewayv2_api.form.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.form.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "form" {
+  api_id    = aws_apigatewayv2_api.form.id
+  route_key = "POST /submit"
+  target    = "integrations/${aws_apigatewayv2_integration.form.id}"
+}
+
+resource "aws_apigatewayv2_stage" "form" {
+  api_id      = aws_apigatewayv2_api.form.id
+  name        = "$default"
+  auto_deploy = true
+}
+
+resource "aws_lambda_permission" "apigw" {
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.form.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.form.execution_arn}/*/*"
+}
+
 # --- Outputs ---
 
 output "cloudfront_url" { value = "https://${aws_cloudfront_distribution.cdn.domain_name}" }
 output "site_url" { value = "https://${local.domain}" }
+output "api_url" { value = aws_apigatewayv2_api.form.api_endpoint }
+output "data_bucket" { value = aws_s3_bucket.data.id }
