@@ -21,11 +21,12 @@ def handler(event, context):
     ]
 
     # Read existing CSV or start fresh
+    existing = ""
     try:
         obj = s3.get_object(Bucket=BUCKET, Key=KEY)
         existing = obj["Body"].read().decode("utf-8")
-    except s3.exceptions.NoSuchKey:
-        existing = ""
+    except Exception:
+        pass
 
     buf = io.StringIO()
     writer = csv.writer(buf)
